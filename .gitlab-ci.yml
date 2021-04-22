@@ -1,0 +1,45 @@
+stages:
+  - compile
+  - test
+  - dockerize
+  - deploy
+
+build:
+  stage: compile
+  image: golang:latest
+  script:
+    - go build .
+
+test:
+  stage: test
+  image: golang:latest
+  script:
+    - cd service
+    - go test .
+
+docker-package:
+  only:
+    refs:
+      - master
+  image: docker:latest
+  stage: dockerize
+  services:
+    - name: docker:dind
+  before_script:
+    - docker login --username "$DOCKER_REGISTRY_USER" --password "$DOCKER_REGISTRY_PASSWORD"
+  after_script:
+    - docker logout
+  script:
+    #- echo $CI_COMMIT_SHORT_SHA
+    - docker build . --tag $DOCKER_REGISTRY_USER/$APP_TAG:latest 
+    - docker tag $DOCKER_REGISTRY_USER/$APP_TAG:latest $DOCKER_REGISTRY_USER/$APP_TAG:stable
+    - docker push $DOCKER_REGISTRY_USER/$APP_TAG:latest
+    - docker push $DOCKER_REGISTRY_USER/$APP_TAG:stable
+
+deploy_staging:
+  stage: deploy
+  before_script:
+    - apt-get update
+    - apt-get install sshpass
+  script:
+    - sshpass -p $PASSWORD ssh -o StrictHostKeyChecking=no root@$SERVER_IP "docker stack deploy --compose-file docker-compose.yml demo"
